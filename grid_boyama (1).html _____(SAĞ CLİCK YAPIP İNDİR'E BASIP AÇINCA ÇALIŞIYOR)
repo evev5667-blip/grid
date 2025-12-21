@@ -23,6 +23,7 @@ button{padding:6px 10px}
 
   <button id="regen">Yeniden Oluştur</button>
   <button id="gridToggle">Grid Türü</button>
+  <button id="paintToggle">Boyama Türü: Kenar</button>
 
   <button id="red">Kırmızı</button>
   <button id="blue">Mavi</button>
@@ -43,9 +44,7 @@ button{padding:6px 10px}
 • Aynı renkte kapalı çevrimler DFS ile bulunur.<br>
 • Aynı doğrultudaki ardışık kenarlar tek kenar sayılır.<br>
 • Menüden seçilen çokgenin gerçek kenarları vurgulanır.<br>
-• "Grid türü" butonuna basılarak grid türleri arasında geçiş yapılır.<br>
-• "Menü" butonu çokgen taramasında bulunan çokgenleri sıralar, çokgenin butonuna basılınca grid üzerinde sarı bir şekilde parlatılarak gösterilir.<br>
-• Boyama yaparken ilk kırmızı veya mavi tuşunda basılır sonra boyanacak kenarlara tıklanır.
+• Boyama türü kenar / doğru arasında değiştirilebilir.
 </div>
 
 <script>
@@ -57,11 +56,11 @@ const polyMenu=document.getElementById('polyMenu');
 const infoBox=document.getElementById('infoBox');
 
 let mode='red';
+let paintType='edge';
 let segments=[];
 let highlighted=new Set();
 let gridMode=1;
 
-/* ---------- Yardımcılar ---------- */
 function edgeKey(s){
   const a=s.a,b=s.b;
   return a.x<b.x||a.x===b.x&&a.y<=b.y
@@ -98,7 +97,6 @@ function simplifyCycle(cycle){
   return pts.map(p=>`${p.x},${p.y}`);
 }
 
-/* ---------- Grid ---------- */
 function rebuild(){
   const n=+nInput.value||4;
   const u=+uInput.value||60;
@@ -133,7 +131,6 @@ function rebuild(){
   draw();
 }
 
-/* ---------- Çizim ---------- */
 function draw(){
   ctx.clearRect(0,0,canvas.width,canvas.height);
   segments.forEach(s=>{
@@ -147,7 +144,6 @@ function draw(){
   });
 }
 
-/* ---------- Boyama ---------- */
 canvas.onclick=e=>{
   const r=canvas.getBoundingClientRect();
   let best=null,d=1e9;
@@ -161,24 +157,40 @@ canvas.onclick=e=>{
     const dist=Math.hypot(dx,dy);
     if(dist<d){d=dist;best=s;}
   });
-  if(best&&d<15){
+  if(!best||d>15)return;
+
+  if(paintType==='edge'){
     best.color=mode==='erase'?null:mode;
-    highlighted.clear();
-    draw();
+  }else{
+    segments.forEach(s=>{
+      if(collinear(best.a,best.b,s.a)&&collinear(best.a,best.b,s.b)){
+        s.color=mode==='erase'?null:mode;
+      }
+    });
   }
+  highlighted.clear();
+  draw();
 };
 
-/* ---------- Kontroller ---------- */
 regen.onclick=rebuild;
 gridToggle.onclick=()=>{gridMode=1-gridMode;rebuild();};
 red.onclick=()=>mode='red';
 blue.onclick=()=>mode='blue';
 erase.onclick=()=>mode='erase';
 clear.onclick=()=>{segments.forEach(s=>s.color=null);highlighted.clear();draw();};
-menuBtn.onclick=()=>polyMenu.style.display=polyMenu.style.display==='none'?'block':'none';
-infoBtn.onclick=()=>infoBox.style.display=infoBox.style.display==='none'?'block':'none';
 
-/* ---------- Çokgen Tarama ---------- */
+paintToggle.onclick=()=>{
+  paintType=paintType==='edge'?'line':'edge';
+  paintToggle.textContent=
+    paintType==='edge'?'Boyama Türü: Kenar':'Boyama Türü: Doğru';
+};
+
+menuBtn.onclick=()=>polyMenu.style.display=
+  polyMenu.style.display==='none'?'block':'none';
+infoBtn.onclick=()=>infoBox.style.display=
+  infoBox.style.display==='none'?'block':'none';
+
+/* === ÇOKGEN TARAMA === */
 scan.onclick=()=>{
   const adj={red:{},blue:{}};
   const nk=p=>p.x+','+p.y;
@@ -214,16 +226,18 @@ scan.onclick=()=>{
           if(nb===start&&p.length>=3){
             const raw=p.concat([start]);
             const simple=simplifyCycle(raw);
-            if(simple.length<4) return;
+            if(simple.length<4)return;
 
             const key=canonical(simple);
-            if(found.has(key)) return;
+            if(found.has(key))return;
             found.add(key);
+
+            const kenar=simple.length-1;
+            const renk=color==='red'?'kırmızı':'mavi';
 
             const b=document.createElement('button');
             b.className='polyBtn';
-            b.textContent=
-              `${found.size}. ${color==='red'?'kırmızı':'mavi'} ${simple.length-1}gen`;
+            b.textContent=`${found.size}. ${renk} ${kenar}-gen`;
 
             b.onclick=()=>{
               highlighted.clear();
@@ -232,21 +246,17 @@ scan.onclick=()=>{
                 const [x2,y2]=simple[i+1].split(',').map(Number);
                 segments.forEach(s=>{
                   if(
-                    (x2-x1)*(s.a.y-y1)!==(y2-y1)*(s.a.x-x1) ||
+                    (x2-x1)*(s.a.y-y1)!==(y2-y1)*(s.a.x-x1)||
                     (x2-x1)*(s.b.y-y1)!==(y2-y1)*(s.b.x-x1)
-                  ) return;
-
-                  const minx=Math.min(x1,x2), maxx=Math.max(x1,x2);
-                  const miny=Math.min(y1,y2), maxy=Math.max(y1,y2);
-
+                  )return;
+                  const minx=Math.min(x1,x2),maxx=Math.max(x1,x2);
+                  const miny=Math.min(y1,y2),maxy=Math.max(y1,y2);
                   if(
-                    s.a.x>=minx&&s.a.x<=maxx &&
-                    s.a.y>=miny&&s.a.y<=maxy &&
-                    s.b.x>=minx&&s.b.x<=maxx &&
+                    s.a.x>=minx&&s.a.x<=maxx&&
+                    s.a.y>=miny&&s.a.y<=maxy&&
+                    s.b.x>=minx&&s.b.x<=maxx&&
                     s.b.y>=miny&&s.b.y<=maxy
-                  ){
-                    highlighted.add(edgeKey(s));
-                  }
+                  ) highlighted.add(edgeKey(s));
                 });
               }
               draw();
@@ -260,6 +270,10 @@ scan.onclick=()=>{
     });
   });
 
+  if(found.size===0){
+    polyMenu.textContent='çokgen bulunamadı.';
+  }
+
   polyMenu.style.display='block';
 };
 
@@ -267,7 +281,3 @@ rebuild();
 </script>
 </body>
 </html>
-
-</body>
-</html>
-
